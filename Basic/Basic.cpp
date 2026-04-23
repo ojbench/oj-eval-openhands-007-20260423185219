@@ -18,6 +18,9 @@
 /* Function prototypes */
 
 void processLine(std::string line, Program &program, EvalState &state);
+void executeProgram(Program &program, EvalState &state);
+void listProgram(Program &program);
+Statement* parseStatement(TokenScanner &scanner);
 
 /* Main program */
 
@@ -57,6 +60,137 @@ void processLine(std::string line, Program &program, EvalState &state) {
     scanner.scanNumbers();
     scanner.setInput(line);
 
-    //todo
+    if (!scanner.hasMoreTokens()) return;
+    
+    std::string firstToken = scanner.nextToken();
+    
+    // Check if first token is a line number
+    if (scanner.getTokenType(firstToken) == NUMBER) {
+        int lineNumber = stringToInteger(firstToken);
+        
+        if (!scanner.hasMoreTokens()) {
+            // Line number alone - remove the line
+            program.removeSourceLine(lineNumber);
+        } else {
+            // Line number with statement - add/replace the line
+            program.addSourceLine(lineNumber, line);
+        }
+        return;
+    }
+    
+    // Direct commands (no line number)
+    scanner.saveToken(firstToken);
+    std::string command = scanner.nextToken();
+    
+    if (command == "RUN") {
+        executeProgram(program, state);
+    } else if (command == "LIST") {
+        listProgram(program);
+    } else if (command == "CLEAR") {
+        program.clear();
+        state.Clear();
+    } else if (command == "QUIT") {
+        exit(0);
+    } else if (command == "HELP") {
+        // Optional - not tested
+        std::cout << "BASIC Interpreter - Commands available:" << std::endl;
+        std::cout << "RUN, LIST, CLEAR, QUIT, HELP" << std::endl;
+        std::cout << "Or enter statements with line numbers to build a program" << std::endl;
+    } else {
+        // Direct execution of statements
+        scanner.saveToken(command);
+        Statement *stmt = parseStatement(scanner);
+        if (stmt) {
+            stmt->execute(state, program);
+            delete stmt;
+        }
+    }
+}
+
+void executeProgram(Program &program, EvalState &state) {
+    int currentLine = program.getFirstLineNumber();
+    
+    while (currentLine != -1) {
+        Statement *stmt = program.getParsedStatement(currentLine);
+        if (!stmt) {
+            // Parse the statement if not already parsed
+            std::string sourceLine = program.getSourceLine(currentLine);
+            TokenScanner scanner;
+            scanner.ignoreWhitespace();
+            scanner.scanNumbers();
+            scanner.setInput(sourceLine);
+            
+            // Skip line number
+            scanner.nextToken();
+            
+            stmt = parseStatement(scanner);
+            program.setParsedStatement(currentLine, stmt);
+        }
+        
+        try {
+            stmt->execute(state, program);
+            currentLine = program.getNextLineNumber(currentLine);
+        } catch (int lineNumber) {
+            // GOTO or IF-THEN jump
+            currentLine = lineNumber;
+        } catch (ErrorException &ex) {
+            if (ex.getMessage() == "END") {
+                break;
+            } else {
+                throw ex;
+            }
+        }
+    }
+}
+
+void listProgram(Program &program) {
+    int currentLine = program.getFirstLineNumber();
+    while (currentLine != -1) {
+        std::cout << program.getSourceLine(currentLine) << std::endl;
+        currentLine = program.getNextLineNumber(currentLine);
+    }
+}
+
+Statement* parseStatement(TokenScanner &scanner) {
+    if (!scanner.hasMoreTokens()) return nullptr;
+    
+    std::string command = scanner.nextToken();
+    
+    if (command == "REM") {
+        return new RemStatement();
+    } else if (command == "LET") {
+        std::string var = scanner.nextToken();
+        if (scanner.nextToken() != "=") {
+            error("SYNTAX ERROR");
+        }
+        Expression *exp = parseExp(scanner);
+        return new LetStatement(var, exp);
+    } else if (command == "PRINT") {
+        Expression *exp = parseExp(scanner);
+        return new PrintStatement(exp);
+    } else if (command == "INPUT") {
+        std::string var = scanner.nextToken();
+        return new InputStatement(var);
+    } else if (command == "END") {
+        return new EndStatement();
+    } else if (command == "GOTO") {
+        std::string lineStr = scanner.nextToken();
+        int lineNumber = stringToInteger(lineStr);
+        return new GotoStatement(lineNumber);
+    } else if (command == "IF") {
+        Expression *exp1 = readE(scanner);
+        std::string op = scanner.nextToken();
+        Expression *exp2 = readE(scanner);
+        if (scanner.nextToken() != "THEN") {
+            error("SYNTAX ERROR");
+        }
+        std::string lineStr = scanner.nextToken();
+        int lineNumber = stringToInteger(lineStr);
+        return new IfStatement(exp1, op, exp2, lineNumber);
+    } else {
+        error("SYNTAX ERROR");
+    }
+    
+    return nullptr;
 }
 
