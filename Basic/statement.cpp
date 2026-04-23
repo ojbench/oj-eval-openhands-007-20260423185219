@@ -96,8 +96,10 @@ void IfStatement::execute(EvalState &state, Program &program) {
 
 // Helper function to convert string to int
 int stringToInt(std::string str) {
+    if (str.empty()) return 0;
     std::istringstream iss(str);
     int value;
     iss >> value;
+    if (iss.fail()) return 0;
     return value;
 }

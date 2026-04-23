@@ -112,6 +112,8 @@ void executeProgram(Program &program, EvalState &state) {
     
     while (currentLine != -1) {
         Statement *stmt = program.getParsedStatement(currentLine);
+        bool shouldDelete = false;
+        
         if (!stmt) {
             // Parse the statement if not already parsed
             std::string sourceLine = program.getSourceLine(currentLine);
@@ -124,16 +126,25 @@ void executeProgram(Program &program, EvalState &state) {
             scanner.nextToken();
             
             stmt = parseStatement(scanner);
-            program.setParsedStatement(currentLine, stmt);
+            shouldDelete = true;
         }
         
         try {
             stmt->execute(state, program);
+            if (shouldDelete) {
+                delete stmt;
+            }
             currentLine = program.getNextLineNumber(currentLine);
         } catch (int lineNumber) {
             // GOTO or IF-THEN jump
+            if (shouldDelete) {
+                delete stmt;
+            }
             currentLine = lineNumber;
         } catch (ErrorException &ex) {
+            if (shouldDelete) {
+                delete stmt;
+            }
             if (ex.getMessage() == "END") {
                 break;
             } else {
